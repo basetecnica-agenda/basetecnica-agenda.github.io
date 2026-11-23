@@ -336,10 +336,21 @@ function openDrawer(html) { $('#drawer').innerHTML = html; $('#drawer').classLis
 function closeDrawer() { $('#drawer').classList.remove('on'); $('#ovl').classList.remove('on'); S.drawer = null; S.drawerEdit = false; }
 $('#ovl').onclick = closeDrawer;
 $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
+/* proteção: junto com a linha vai o nome do evento; se a planilha mudou (linhas apagadas/incluídas), o servidor recusa */
+function evNomeDe(row) { const e = ((S.data && S.data.events) || []).find(x => x.row === +row); return e ? e.nome : ''; }
+function comNome(args) {
+  const a = args.slice();
+  if (a[0] && typeof a[0] === 'object' && !Array.isArray(a[0]) && a[0].row && !a[0].evNome) a[0] = Object.assign({}, a[0], { evNome: evNomeDe(a[0].row) });
+  return a;
+}
 async function run(fn, args) {
   loading(true); S.busy = true;
-  try { const r = await api(fn, ...args); return r; }
-  catch (e) { toast('⚠ ' + esc(e && e.message || e), true); throw e; }
+  try { const r = await api(fn, ...comNome(args)); return r; }
+  catch (e) {
+    toast('⚠ ' + esc(e && e.message || e), true);
+    if (/planilha mudou/i.test(String(e && e.message || e))) setTimeout(() => load(), 300);   // recarrega sozinho
+    throw e;
+  }
   finally { loading(false); S.busy = false; }
 }
 
@@ -588,7 +599,7 @@ function confirmarEscalacao(row) {
 async function loadEvLocal(row) {
   const box = () => $('#evLocal');
   let c;
-  try { c = await api('getEventoCfg', S.sheet, row); } catch (err) { if (box()) box().innerHTML = `<h3>📍 Local do check-in</h3><div class="muted">⚠ ${esc(err.message || err)}</div>`; return; }
+  try { c = await api('getEventoCfg', S.sheet, row, evNomeDe(row)); } catch (err) { if (box()) box().innerHTML = `<h3>📍 Local do check-in</h3><div class="muted">⚠ ${esc(err.message || err)}</div>`; return; }
   if (!box() || S.drawer !== row) return;
   const mapa = c.lat ? `<a href="https:\/\/www.google.com/maps?q=${c.lat},${c.lng}" target="_blank">ver no mapa</a>` : '';
   box().innerHTML = `<h3>📍 Local do check-in <span class="muted">· usado para conferir o GPS de quem faz check-in</span></h3>
@@ -809,7 +820,7 @@ function vPerson() {
 
 /* ---------------- Ponto ---------------- */
 async function linkCheckin(row) {
-  const r = await run('getLinkEvento', [S.sheet, row]);
+  const r = await run('getLinkEvento', [S.sheet, row, evNomeDe(row)]);
   if (!r.link) return toast('Publique o App da Web para gerar links.', true);
   const msg = `*Check-in / check-out · ${r.nome}*\nFaça seu check-in ao chegar e o check-out ao sair:\n${r.link}`;
   modal(`<h3>⏱ Link de check-in · ${esc(r.nome)}</h3>
